@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright 2020 The Google Research Authors.
+# Copyright 2021 The Google Research Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -33,6 +33,7 @@ class Conv1DTranspose(tf.keras.layers.Conv1DTranspose):
   def __init__(self,
                mode=modes.Modes.TRAINING,
                inference_batch_size=1,
+               pad_time_dim='causal',
                state_shape=None,
                crop_output=True,
                **kwargs):
@@ -45,11 +46,23 @@ class Conv1DTranspose(tf.keras.layers.Conv1DTranspose):
 
     self.mode = mode
     self.inference_batch_size = inference_batch_size
+    self.pad_time_dim = pad_time_dim
     self.state_shape = state_shape
     self.crop_output = crop_output
 
     self.overlap = self.kernel_size[0] - self.strides[0]
     self.overlap = max(self.overlap, 0)
+
+    if pad_time_dim not in ['same', 'causal']:
+      raise ValueError(
+          'pad_time_dim (\'%s\') must be either \'same\' or \'causal\'' %
+          pad_time_dim)
+
+    if 'padding' in kwargs and kwargs['padding'] != 'valid':
+      raise ValueError(
+          'padding (\'%s\') must be \'valid\'. Use pad_time_dim to make the '
+          'layer causal (\'causal\') or with lookahead (\'same\')' %
+          kwargs['padding'])
 
   def build(self, input_shape):
     super(Conv1DTranspose, self).build(input_shape)
@@ -67,8 +80,6 @@ class Conv1DTranspose(tf.keras.layers.Conv1DTranspose):
 
       self.output_time_dim = input_shape.as_list()[1] * self.strides[0]
 
-      self.input_state = []
-      self.output_state = []
       if self.overlap > 0:
         self.state_shape = [
             self.inference_batch_size, self.overlap, self.filters
@@ -88,6 +99,7 @@ class Conv1DTranspose(tf.keras.layers.Conv1DTranspose):
               shape=self.state_shape[1:],
               batch_size=self.inference_batch_size,
               name=self.name + '/input_state_remainder')
+          self.output_state = None
 
   def call(self, inputs):
 
@@ -106,7 +118,7 @@ class Conv1DTranspose(tf.keras.layers.Conv1DTranspose):
       return self._non_streaming(inputs)
 
     else:
-      raise ValueError('wrong mode', self.mode)
+      raise ValueError(f'Encountered unexpected mode `{self.mode}`.')
 
   def get_config(self):
     config = super(Conv1DTranspose, self).get_config()
@@ -115,6 +127,7 @@ class Conv1DTranspose(tf.keras.layers.Conv1DTranspose):
     config.update({
         'mode': self.mode,
         'inference_batch_size': self.inference_batch_size,
+        'pad_time_dim': self.pad_time_dim,
         'state_shape': self.state_shape,
         'crop_output': self.crop_output,
     })
@@ -185,20 +198,26 @@ class Conv1DTranspose(tf.keras.layers.Conv1DTranspose):
     # during training or non streaming inference, input shape can be dynamic
     output_time_dim = tf.shape(inputs)[1] * self.strides[0]
     if self.crop_output:
-      return outputs[:, 0:output_time_dim, :]
+      if self.pad_time_dim == 'same':
+        crop_left = self.overlap // 2
+        return outputs[:, crop_left:crop_left + output_time_dim, :]
+      else:
+        return outputs[:, 0:output_time_dim, :]
     else:
       return outputs
 
   def get_input_state(self):
     # input state will be used only for STREAM_EXTERNAL_STATE_INFERENCE mode
     if self.mode == modes.Modes.STREAM_EXTERNAL_STATE_INFERENCE:
-      return self.input_state
+      return [self.input_state]
     else:
-      raise ValueError('wrong mode', self.mode)
+      raise ValueError('Expected the layer to be in external streaming mode, '
+                       f'not `{self.mode}`.')
 
   def get_output_state(self):
     # output state will be used only for STREAM_EXTERNAL_STATE_INFERENCE mode
     if self.mode == modes.Modes.STREAM_EXTERNAL_STATE_INFERENCE:
-      return self.output_state
+      return [self.output_state]
     else:
-      raise ValueError('wrong mode', self.mode)
+      raise ValueError('Expected the layer to be in external streaming mode, '
+                       f'not `{self.mode}`.')

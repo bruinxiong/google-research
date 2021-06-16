@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright 2020 The Google Research Authors.
+# Copyright 2021 The Google Research Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -29,6 +29,8 @@ class Delay(tf.keras.layers.Layer):
     mode: Training or inference modes: non streaming, streaming.
     delay: delay value
     inference_batch_size: batch size in inference mode
+    also_in_non_streaming: Apply delay also in training and non-streaming
+      inference mode.
     **kwargs: additional layer arguments
   """
 
@@ -36,22 +38,24 @@ class Delay(tf.keras.layers.Layer):
                mode=modes.Modes.TRAINING,
                delay=0,
                inference_batch_size=1,
+               also_in_non_streaming=False,
                **kwargs):
     super(Delay, self).__init__(**kwargs)
     self.mode = mode
     self.delay = delay
     self.inference_batch_size = inference_batch_size
+    self.also_in_non_streaming = also_in_non_streaming
+
+    if delay < 0:
+      raise ValueError('delay (%d) must be non-negative' % delay)
 
   def build(self, input_shape):
     super(Delay, self).build(input_shape)
-    self.input_state = []
-    self.output_state = []
 
     if self.delay > 0:
+      self.state_shape = [self.inference_batch_size, self.delay
+                         ] + input_shape.as_list()[2:]
       if self.mode == modes.Modes.STREAM_INTERNAL_STATE_INFERENCE:
-        self.state_shape = [
-            self.inference_batch_size, self.delay
-        ] + input_shape.as_list()[2:]
         self.states = self.add_weight(
             name='states',
             shape=self.state_shape,
@@ -65,6 +69,7 @@ class Delay(tf.keras.layers.Layer):
             shape=self.state_shape[1:],
             batch_size=self.inference_batch_size,
             name=self.name + '/input_state_delay')
+        self.output_state = None
 
   def call(self, inputs):
     if self.delay == 0:
@@ -85,7 +90,7 @@ class Delay(tf.keras.layers.Layer):
       return self._non_streaming(inputs)
 
     else:
-      raise ValueError('wrong mode', self.mode)
+      raise ValueError(f'Encountered unexpected mode `{self.mode}`.')
 
   def get_config(self):
     config = super(Delay, self).get_config()
@@ -93,13 +98,14 @@ class Delay(tf.keras.layers.Layer):
         'mode': self.mode,
         'delay': self.delay,
         'inference_batch_size': self.inference_batch_size,
+        'also_in_non_streaming': self.also_in_non_streaming,
     })
     return config
 
   def _streaming_internal_state(self, inputs):
     memory = tf.keras.backend.concatenate([self.states, inputs], 1)
-    outputs = memory[:, 0:inputs.shape.as_list()[1], :]
-    new_memory = memory[:, -self.delay:, :]
+    outputs = memory[:, :inputs.shape.as_list()[1]]
+    new_memory = memory[:, -self.delay:]
     assign_states = self.states.assign(new_memory)
 
     with tf.control_dependencies([assign_states]):
@@ -107,23 +113,29 @@ class Delay(tf.keras.layers.Layer):
 
   def _streaming_external_state(self, inputs, states):
     memory = tf.keras.backend.concatenate([states, inputs], 1)
-    outputs = memory[:, 0:inputs.shape.as_list()[1], :]
-    new_memory = memory[:, -self.delay:, :]
+    outputs = memory[:, :inputs.shape.as_list()[1]]
+    new_memory = memory[:, -self.delay:]
     return outputs, new_memory
 
   def _non_streaming(self, inputs):
-    return inputs
+    if self.also_in_non_streaming:
+      return tf.pad(inputs, ((0, 0), (self.delay, 0)) + ((0, 0),) *
+                    (inputs.shape.rank - 2))[:, :-self.delay]
+    else:
+      return inputs
 
   def get_input_state(self):
     # input state will be used only for STREAM_EXTERNAL_STATE_INFERENCE mode
     if self.mode == modes.Modes.STREAM_EXTERNAL_STATE_INFERENCE:
-      return self.input_state
+      return [self.input_state]
     else:
-      raise ValueError('wrong mode', self.mode)
+      raise ValueError('Expected the layer to be in external streaming mode, '
+                       f'not `{self.mode}`.')
 
   def get_output_state(self):
     # output state will be used only for STREAM_EXTERNAL_STATE_INFERENCE mode
     if self.mode == modes.Modes.STREAM_EXTERNAL_STATE_INFERENCE:
-      return self.output_state
+      return [self.output_state]
     else:
-      raise ValueError('wrong mode', self.mode)
+      raise ValueError('Expected the layer to be in external streaming mode, '
+                       f'not `{self.mode}`.')

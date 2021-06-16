@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright 2020 The Google Research Authors.
+# Copyright 2021 The Google Research Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@
 
 from absl import flags
 from absl.testing import absltest
+import tensorflow as tf
 from non_semantic_speech_benchmark.distillation import eval_keras
 
 
@@ -34,4 +35,6 @@ class EvalKerasTest(absltest.TestCase):
 
 
 if __name__ == '__main__':
+  tf.compat.v2.enable_v2_behavior()
+  assert tf.executing_eagerly()
   absltest.main()

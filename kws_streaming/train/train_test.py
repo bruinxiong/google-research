@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright 2020 The Google Research Authors.
+# Copyright 2021 The Google Research Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -19,8 +19,8 @@ import os
 from absl import flags
 from absl.testing import parameterized
 import tensorflow.compat.v1 as tf
+from kws_streaming.models import model_flags
 from kws_streaming.models import model_params
-from kws_streaming.train import model_flags
 from kws_streaming.train import train
 tf.disable_eager_execution()
 

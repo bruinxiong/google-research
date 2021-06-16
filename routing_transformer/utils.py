@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright 2020 The Google Research Authors.
+# Copyright 2021 The Google Research Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -336,6 +336,59 @@ def transformer_decoder_layers(inputs,
   return layer_preprocess(x, hparams)
 
 
+def gelu(x):
+  """Gaussian Error Linear Unit.
+
+  This is a smoother version of the RELU.
+  Original paper: https://arxiv.org/abs/1606.08415
+  Args:
+    x: float Tensor to perform activation.
+
+  Returns:
+    `x` with the GELU activation applied.
+  """
+  cdf = 0.5 * (1.0 + tf.tanh(
+      (np.sqrt(2 / np.pi) * (x + 0.044715 * tf.pow(x, 3)))))
+  return x * cdf
+
+
+def geglu(inputs,
+          filter_size,
+          output_size,
+          output_activation=None,
+          dropout=0.0,
+          dropout_broadcast_dims=None,
+          name=None):
+  """GEGLU activation as in https://arxiv.org/abs/2002.05202."""
+  # layer_name is appended with "conv1" or "conv2" in this method only for
+  # historical reasons. These are in fact dense layers.
+  layer_name = "%s_{}" % name if name else "{}"
+  h = tf.layers.dense(
+      inputs,
+      filter_size,
+      use_bias=False,
+      activation=None,
+      name=layer_name.format("weight1"))
+  h = gelu(h)
+  v = tf.layers.dense(
+      inputs,
+      filter_size,
+      use_bias=False,
+      activation=None,
+      name=layer_name.format("weight2"))
+  h *= v
+  if dropout != 0.0:
+    h = dropout_with_broadcast_dims(
+        h, 1.0 - dropout, broadcast_dims=dropout_broadcast_dims)
+  o = tf.layers.dense(
+      h,
+      output_size,
+      activation=output_activation,
+      use_bias=False,
+      name=layer_name.format("weight3"))
+  return o
+
+
 def dense_relu_dense(inputs,
                      filter_size,
                      output_size,
@@ -423,6 +476,12 @@ def ffn_layer(x, hparams):
   with tf.variable_scope("ffn"):
     if hparams.ffn_layer == "none":
       return x
+    elif hparams.ffn_layer == "geglu":
+      return geglu(
+          x,
+          hparams.filter_size,
+          hparams.hidden_size,
+          dropout=hparams.relu_dropout)
     else:
       return dense_relu_dense(
           x,
@@ -2322,22 +2381,13 @@ def _relative_attention_inner(x, y, z, transpose):
   Returns:
     A Tensor with shape [batch_size, heads, length, length or depth].
   """
-  batch_size = tf.shape(x)[0]
-  heads = x.get_shape().as_list()[1]
-  length = tf.shape(x)[2]
-
   # xy_matmul is [batch_size, heads, length or 1, length or depth]
-  xy_matmul = tf.matmul(x, y, transpose_b=transpose)
-  # x_t is [length or 1, batch_size, heads, length or depth]
-  x_t = tf.transpose(x, [2, 0, 1, 3])
-  # x_t_r is [length or 1, batch_size * heads, length or depth]
-  x_t_r = tf.reshape(x_t, [length, heads * batch_size, -1])
-  # x_tz_matmul is [length or 1, batch_size * heads, length or depth]
-  x_tz_matmul = tf.matmul(x_t_r, z, transpose_b=transpose)
-  # x_tz_matmul_r is [length or 1, batch_size, heads, length or depth]
-  x_tz_matmul_r = tf.reshape(x_tz_matmul, [length, batch_size, heads, -1])
-  # x_tz_matmul_r_t is [batch_size, heads, length or 1, length or depth]
-  x_tz_matmul_r_t = tf.transpose(x_tz_matmul_r, [1, 2, 0, 3])
+  if transpose:
+    xy_matmul = tf.einsum("bhxd,bhyd->bhxy", x, y)
+    x_tz_matmul_r_t = tf.einsum("bhxd,xyd->bhxy", x, z)
+  else:
+    xy_matmul = tf.einsum("bhxd,bhdy->bhxy", x, y)
+    x_tz_matmul_r_t = tf.einsum("bhxd,xdy->bhxy", x, z)
   return xy_matmul + x_tz_matmul_r_t
 
 

@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright 2020 The Google Research Authors.
+# Copyright 2021 The Google Research Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -23,6 +23,9 @@ TFE_KEY_SUFFIX_KEYPOINT_2D = ['/center/y', '/center/x']
 TFE_KEY_PREFIX_KEYPOINT_3D = 'image/object/part_3d/'
 TFE_KEY_SUFFIX_KEYPOINT_3D = ['/center/y', '/center/x', '/center/z']
 TFE_KEY_SUFFIX_KEYPOINT_SCORE = '/score'
+TFE_KEY_FEATURE = 'feature/data'
+TFE_KEY_CLASS_LABEL_ID = 'image/class/label'
+TFE_KEY_CLASS_LABEL_CONFIDENCE = 'image/class/confidence'
 
 # Input keys.
 KEY_IMAGE_SIZES = 'image_sizes'
@@ -34,6 +37,7 @@ KEY_PREPROCESSED_KEYPOINT_MASKS_2D = 'preprocessed_keypoint_masks_2d'
 KEY_OFFSET_POINTS_2D = 'offset_points_2d'
 KEY_SCALE_DISTANCES_2D = 'scale_distances_2d'
 KEY_KEYPOINTS_3D = 'keypoints_3d'
+KEY_PREPROCESSED_KEYPOINTS_3D = 'preprocessed_keypoints_3d'
 KEY_OFFSET_POINTS_3D = 'offset_points_3d'
 KEY_SCALE_DISTANCES_3D = 'scale_distances_3d'
 KEY_EMBEDDING_MEANS = 'unnormalized_embeddings'
@@ -41,6 +45,9 @@ KEY_EMBEDDING_STDDEVS = 'embedding_stddevs'
 KEY_EMBEDDING_SAMPLES = 'unnormalized_embedding_samples'
 KEY_PREDICTED_KEYPOINTS_3D = 'predicted_keypoints_3d'
 KEY_ALL_PREDICTED_KEYPOINTS_3D = 'all_predicted_keypoints_3d'
+KEY_FEATURES = 'features'
+KEY_CLASS_TARGETS = 'class_targets'
+KEY_CLASS_WEIGHTS = 'class_weights'
 
 # Model input keypoint types.
 # 2D keypoints from input tables.
@@ -61,13 +68,26 @@ SUPPORTED_INFERENCE_MODEL_INPUT_KEYPOINT_TYPES = [
     MODEL_INPUT_KEYPOINT_TYPE_2D_INPUT,
 ]
 
+# Base model types.
+# Simple Baseline architecutre: Martinez, et al. A simple yet effective baseline
+# for 3d human pose estimation. ICCV 2017.
+BASE_MODEL_TYPE_SIMPLE = 'SIMPLE'
+# Supported base model types.
+SUPPORTED_BASE_MODEL_TYPES = [BASE_MODEL_TYPE_SIMPLE]
+
 # Embedding types.
 # Point embedding.
 EMBEDDING_TYPE_POINT = 'POINT'
-# Gaussian embedding.
+# Gaussian embedding with diagonal covariance matrix.
 EMBEDDING_TYPE_GAUSSIAN = 'GAUSSIAN'
+# Gaussian embedding with scalar variance.
+EMBEDDING_TYPE_GAUSSIAN_SCALAR_VAR = 'GAUSSIAN_SCALAR_VAR'
 # Supported embedding types.
-SUPPORTED_EMBEDDING_TYPES = [EMBEDDING_TYPE_POINT, EMBEDDING_TYPE_GAUSSIAN]
+SUPPORTED_EMBEDDING_TYPES = [
+    EMBEDDING_TYPE_POINT,
+    EMBEDDING_TYPE_GAUSSIAN,
+    EMBEDDING_TYPE_GAUSSIAN_SCALAR_VAR,
+]
 
 # Embedding distance types.
 # Distance computed using embedding centers.
@@ -100,12 +120,16 @@ SUPPORTED_DISTANCE_PAIR_TYPES = [
 DISTANCE_KERNEL_SQUARED_L2 = 'SQUARED_L2'
 # L2-based sigmoid matching probability.
 DISTANCE_KERNEL_L2_SIGMOID_MATCHING_PROB = 'L2_SIGMOID_MATCHING_PROB'
+# Squared L2-based sigmoid matching probability.
+DISTANCE_KERNEL_SQUARED_L2_SIGMOID_MATCHING_PROB = (
+    'SQUARED_L2_SIGMOID_MATCHING_PROB')
 # Expected likelihood.
 DISTANCE_KERNEL_EXPECTED_LIKELIHOOD = 'EXPECTED_LIKELIHOOD'
 # Supported distance kernels.
 SUPPORTED_DISTANCE_KERNELS = [
     DISTANCE_KERNEL_SQUARED_L2,
     DISTANCE_KERNEL_L2_SIGMOID_MATCHING_PROB,
+    DISTANCE_KERNEL_SQUARED_L2_SIGMOID_MATCHING_PROB,
     DISTANCE_KERNEL_EXPECTED_LIKELIHOOD,
 ]
 
